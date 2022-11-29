@@ -104,7 +104,7 @@ def load_cellranger_samples(directory_list, feature_type="peaks"):
     
     # loading and concatenating samples
     obj_list=list()
-    for i, sample in enumerate(sample_dirs):
+    for i, sample in enumerate(directory_list):
         locals()["ad_"+sample.split("/")[-1]] = load_cellranger(sample, feature_type=feature_type)
         locals()["ad_"+sample.split("/")[-1]].obs["orig"]=sample.split("/")[-1]
         obj_list.append("ad_"+sample.split("/")[-1])
@@ -123,7 +123,7 @@ def load_cellranger_samples(directory_list, feature_type="peaks"):
 
     # other features from peak annotations
     gene_features=dict()
-    for i, sample in enumerate(sample_dirs):
+    for i, sample in enumerate(directory_list):
         df = pd.read_csv(sample+'/outs/peak_annotation.tsv', sep='\t')
         df['distance'] = df['distance'].astype(str)
         dfg = df.groupby(['chrom','start','end','peak_type','distance']).agg({'gene':lambda x: list(x)})
