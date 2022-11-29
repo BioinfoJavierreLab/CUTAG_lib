@@ -18,7 +18,6 @@ def wanted_leiden(ada, nclust, **kwargs):
         for _ in range(20):
             leiden(ada, resolution=res, **kwargs)
             nfound = len(set(ada.obs[key_added]))
-            print(nfound, res)
             if nfound == nclust:
                 return ada
             if nfound < nclust:
