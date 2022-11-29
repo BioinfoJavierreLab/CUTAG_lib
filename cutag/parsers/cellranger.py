@@ -98,45 +98,53 @@ def load_cellranger(directory, feature_type="peaks"):
     return adata
 
 def load_cellranger_samples(directory_list, feature_type="peaks"):
-    # Input example:
-    # directory_list = ["/scratch2/shared/LEAP/scCUTnTAG/621","/scratch2/shared/LEAP/scCUTnTAG/831"]
-    # something that contains /outs/filtered_peak_bc_matrix/... , /outs/filtered_tf_bc_matrix/...
+    """
+    Load multiple samples from cellranger outputs. 
+    Also annotates with Genes near peaks.
     
+    :param directory_list: list of cellranger output directories 
+       (e.g.: `["/PATH/scCUTnTAG/621","/PATH/scCUTnTAG/831"]`)
+    :param feature_type: to be loaded can be either 'peaks' or 'TFS'
+
+    :returns: a MUON object (concatenated AnnData objects)
+    """
     # loading and concatenating samples
-    obj_list=list()
+    obj_list = list()
     for i, sample in enumerate(directory_list):
-        locals()["ad_"+sample.split("/")[-1]] = load_cellranger(sample, feature_type=feature_type)
-        locals()["ad_"+sample.split("/")[-1]].obs["orig"]=sample.split("/")[-1]
-        obj_list.append("ad_"+sample.split("/")[-1])
-        if i==0:
-            adata = locals()["ad_"+sample.split("/")[-1]]
+        sample_name = "ad_" + sample.split("/")[-1]
+        adata_ = load_cellranger(sample, feature_type=feature_type)
+        adata_.obs["orig"] = sample_name[3:]
+        obj_list.append(sample_name)
+        if i == 0:
+            adata = adata_
         else:
-            adata=ad.concat([adata,locals()["ad_"+sample.split("/")[-1]]],join="outer")
+            adata = ad.concat([adata, adata_], join="outer")
         obj_list.append("ad_"+sample.split("/")[-1])
-        del(locals()["ad_"+sample.split("/")[-1]])
 
     # some features
-    adata.var["gene_ids"]=adata.var.index
-    adata.var["chrom"]=adata.var["gene_ids"].apply(lambda x: x.split(":")[0])
-    adata.var["start"]=adata.var["gene_ids"].apply(lambda x: x.split(":")[1].split("-")[0])
-    adata.var["end"]=adata.var["gene_ids"].apply(lambda x: x.split(":")[1].split("-")[1])
+    adata.var["gene_ids"] = adata.var.index
+    adata.var["chrom"]    = adata.var["gene_ids"].apply(lambda x: x.split(":")[0])
+    adata.var["start"]    = adata.var["gene_ids"].apply(lambda x: x.split(":")[1].split("-")[0])
+    adata.var["end"]      = adata.var["gene_ids"].apply(lambda x: x.split(":")[1].split("-")[1])
 
-    # other features from peak annotations
+    # other features from peak annotations 
+    # TODO: check this
     gene_features=dict()
     for i, sample in enumerate(directory_list):
-        df = pd.read_csv(sample+'/outs/peak_annotation.tsv', sep='\t')
+        df = pd.read_csv(os.path.join(sample, 'outs', 'peak_annotation.tsv'), sep='\t')
         df['distance'] = df['distance'].astype(str)
         dfg = df.groupby(['chrom','start','end','peak_type','distance']).agg({'gene':lambda x: list(x)})
         dfm = df.merge(dfg,how='left', left_on=['chrom','start','end','peak_type','distance'], right_on=['chrom','start','end','peak_type','distance'])
         dfm['gene_y'] = [','.join(map(str, l)) for l in dfm['gene_y']]
         dfm.drop_duplicates(['chrom','start','end'], inplace = True)
         dfm.reset_index(inplace=True)
-        dfm["gene_ids"]=dfm["chrom"].astype(str)+":"+dfm["start"].astype(str)+"-"+dfm["end"].astype(str)
+        dfm["gene_ids"] = dfm["chrom"].astype(str) + ":" + dfm["start"].astype(str) + "-" + dfm["end"].astype(str)
         dfm = dfm.set_index("gene_ids")
         for gene in dfm.index.tolist():
-            gene_features[gene]=[dfm.loc[str(gene)].gene_y, dfm.loc[str(gene)].distance, dfm.loc[str(gene)].peak_type]
-    adata.var["distance"]=adata.var["gene_ids"].apply(lambda x: gene_features[x][1])
-    adata.var["peak_type"]=adata.var["gene_ids"].apply(lambda x: gene_features[x][2])
-    adata.var["gene_y"]=adata.var["gene_ids"].apply(lambda x: gene_features[x][0])
+            gene_features[gene] = [dfm.loc[str(gene)].gene_y, dfm.loc[str(gene)].distance, dfm.loc[str(gene)].peak_type]
+
+    adata.var["distance"]  = adata.var["gene_ids"].apply(lambda x: gene_features[x][1])
+    adata.var["peak_type"] = adata.var["gene_ids"].apply(lambda x: gene_features[x][2])
+    adata.var["gene_y"]    = adata.var["gene_ids"].apply(lambda x: gene_features[x][0])
     return adata
 
