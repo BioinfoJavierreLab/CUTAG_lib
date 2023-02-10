@@ -97,6 +97,7 @@ def load_cellranger(directory, feature_type="peaks"):
     adata.obs = adata.obs.drop(0, axis=1)
     return adata
 
+
 def load_cellranger_samples(directory_list, feature_type="peaks"):
     """
     Load multiple samples from cellranger outputs. 
@@ -134,7 +135,9 @@ def load_cellranger_samples(directory_list, feature_type="peaks"):
         df = pd.read_csv(os.path.join(sample, 'outs', 'peak_annotation.tsv'), sep='\t')
         df['distance'] = df['distance'].astype(str)
         dfg = df.groupby(['chrom','start','end','peak_type','distance']).agg({'gene':lambda x: list(x)})
-        dfm = df.merge(dfg,how='left', left_on=['chrom','start','end','peak_type','distance'], right_on=['chrom','start','end','peak_type','distance'])
+        dfm = df.merge(dfg, how='left', 
+                       left_on =['chrom', 'start', 'end', 'peak_type', 'distance'],
+                       right_on=['chrom', 'start', 'end', 'peak_type', 'distance'])
         dfm['gene_y'] = [','.join(map(str, l)) for l in dfm['gene_y']]
         dfm.drop_duplicates(['chrom','start','end'], inplace = True)
         dfm.reset_index(inplace=True)
