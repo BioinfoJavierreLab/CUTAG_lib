@@ -81,7 +81,7 @@ def load_cellranger(directory, feature_type="peaks", dtype=int):
     elif feature_type == "TFs":
         ddir = 'filtered_tf_bc_matrix'
     else:
-        raise NotImplementedError(f"ERROR: item {feature_type} not known")
+        ddir = f'filtered_peak_bc_matrix_{feature_type}'
     
     rows = [read_bed(l) for l in 
             open(os.path.join(directory , 'outs',

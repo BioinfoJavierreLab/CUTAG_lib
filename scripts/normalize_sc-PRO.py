@@ -33,7 +33,7 @@ def merge_adjacent_bins(adata):
         preve = e
     list_of_lists.append(f"{prevc}:{prevb}-{e}")
     list_of_lists_idx.append(ns + [n + 1])
-    
+
     adata.X = adata.X.tocsc()  # this will speed up column peeking
     tmpX = adata.X.toarray()
     tmp = np.vstack([tmpX[:,idx].sum(axis=1) for idx in list_of_lists_idx]).T
@@ -79,20 +79,21 @@ def main():
 
     opts = get_options()
 
-    sample = opts.sample
+    genomic_sample = opts.genomic_sample
+    adt_sample = opts.adt_sample
     adt_by_bg = opts.adt_by_bg
+    feature_type = opts.feature_type
     outdir = opts.outdir
 
-    cwd = "/home/xavi/Notebooks/Projects/scCUTandTAG/satija_processing/"
+    sample = os.path.split(genomic_sample)[-1]
 
     print(f"Processing {sample}")
 
     # Load data
     ### remove windows with less than five counts and then merge adjacent windows
-    sample_dir = os.path.join(cwd, sample, sample + "_5000_notmerged")
-
     print(f" - Loading Genomic library")
-    adata = load_cellranger(sample_dir, feature_type="peaks", dtype=float)
+    adata = load_cellranger(genomic_sample, feature_type=feature_type, 
+                            dtype=float)
 
     # Filter bins in few cells
     print(f" - Filter genomic features in few cells")
@@ -100,13 +101,11 @@ def main():
 
     # Normalize by TF-IDF
     print(f" - TF-IDF normalization on genomic library")
-    normalize_TFIDF(adata, os.path.join(cwd, sample, "mapped_read_per_barcode.txt"))
+    normalize_TFIDF(adata, os.path.join(genomic_sample, "outs", "mapped_read_per_barcode.txt"))
 
     # Merge ADTS
     print(f" - Loading ADTs")
-    adts_sample = sample[:-3] + str(int(sample[-3:])+1)
-    adts_dir = os.path.join(cwd, adts_sample)
-    adts_file = glob(os.path.join(adts_dir, "*.tsv"))[0]
+    adts_file = glob(os.path.join(adt_sample, "*.tsv"))[0]
     # what is this?
     if sample.startswith("GSM"):
         ad_adts = sc.read(adts_file, delimiter=" ")
@@ -150,10 +149,15 @@ def main():
 def get_options():
     parser = ArgumentParser()
 
-    parser.add_argument('-s', dest='sample', metavar='STR', required=True,
-                        default=False, help='''Sample name''')
+    parser.add_argument('-g', dest='genomic_sample', metavar='PATH', required=True,
+                        default=False, help='''Path to genomic sample folder''')
+    parser.add_argument('-a', dest='adt_sample', metavar='PATH', required=True,
+                        default=False, help='''Path to ADT sample folder''')
     parser.add_argument('-o', dest='outdir', metavar='PATH', required=True,
                         default=False, help='''Path to output folder.''')
+    parser.add_argument('-f', dest='feature_type', metavar='STR', 
+                        default='peaks', choices=["5000_notmerged", "peaks", "TFs"],
+                        help='''[%(default)s] Feature type. Can be one of [%(choices)s]''')
     parser.add_argument('--bg', dest='adt_by_bg', action="store_true",
                         default=False, 
                         help='''Normalize ADTs by background from genomic-library''')
