@@ -106,7 +106,7 @@ def main():
     # Merge ADTS
     print(f" - Loading ADTs")
     adts_file = glob(os.path.join(adt_sample, "*.tsv"))[0]
-    # what is this?
+    # TODO: what is this?
     if sample.startswith("GSM"):
         ad_adts = sc.read(adts_file, delimiter=" ")
         ad_adts = ad_adts.transpose()
@@ -116,7 +116,7 @@ def main():
     print(f" - Filter ADTs with few counts")
     sc.pp.filter_cells(ad_adts, min_counts=10)
 
-    ad_adts.obs.index = [v.replace('.1', '-1') for v in ad_adts.obs.index]
+    ad_adts.obs.index = [f"{v[:-2]}-1" for v in ad_adts.obs.index]  # WARNING: highly specific to Satija dataset
 
     # Merge ADT with genomic library
     ad_adts.obs = pd.merge(ad_adts.obs, adata.obs, 
