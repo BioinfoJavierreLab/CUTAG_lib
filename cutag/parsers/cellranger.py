@@ -51,7 +51,7 @@ def get_total_mapped(rep):
     return elts
 
 
-def read_matrix(mpath, size):
+def read_matrix(mpath, size, dtype=int):
     fh = open(mpath)
     count = 0
     for line in fh:
@@ -60,14 +60,14 @@ def read_matrix(mpath, size):
             continue
         break
     fh.seek(count)
-    data, i, j = zip(*((int(v), int(i) - 1, int(j) - 1) 
+    data, i, j = zip(*((dtype(v), int(i) - 1, int(j) - 1) 
                             for i, j, v in (l.split()
                                             for l in fh)))
 
     return sparse.coo_matrix((data, (j, i)), shape=size).tocsc()
 
 
-def load_cellranger(directory, feature_type="peaks"):
+def load_cellranger(directory, feature_type="peaks", dtype=int):
     """
     :param directory: cellranger root output directory (containting the 'outs'
        directory and the bam file)
@@ -92,7 +92,7 @@ def load_cellranger(directory, feature_type="peaks"):
                                  ddir, 'barcodes.tsv'))]
 
     X = read_matrix(os.path.join(directory, 'outs', ddir, 'matrix.mtx'), 
-                    size=(len(columns), len(rows)))
+                    size=(len(columns), len(rows)), dtype=dtype)
 
     adata = ad.AnnData(X=X, obs=columns, var=rows, dtype=X.dtype)
 

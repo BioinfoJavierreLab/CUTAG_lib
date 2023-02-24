@@ -62,7 +62,7 @@ def normalize_TFIDF(adata, bgpath):
                     )
                 ).tocsc()  # this will speed up most computation
     # check!
-    print(adata.X.toarray().sum())
+    # print(adata.X.toarray().sum())
 
 
 def normalize_CLR(ad_adts):
@@ -92,7 +92,7 @@ def main():
     sample_dir = os.path.join(cwd, sample, sample + "_5000_notmerged")
 
     print(f" - Loading Genomic library")
-    adata = load_cellranger(sample_dir, feature_type="peaks")
+    adata = load_cellranger(sample_dir, feature_type="peaks", dtype=float)
 
     # Filter bins in few cells
     print(f" - Filter genomic features in few cells")
