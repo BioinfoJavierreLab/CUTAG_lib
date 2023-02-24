@@ -40,14 +40,10 @@ if [ -z "$rep" ]; then
     Help
 fi
 
-# get uniquely mapped reads:
-echo "Getting uniquely mapped reads from cellranger output"
-samtools view -@ $cpu -h -b -f 2 -F 1024 $rep/outs/possorted_bam.bam > $rep/outs/possorted_uniq_mapped_proper.bam
-
-echo "Counting number of genomic reads per droplet (potentially empty or with cell)"
-samtools view -@ $cpu $rep/outs/possorted_uniq_mapped_proper.bam | \
+echo "Counting number of unique genomic reads per droplet (potentially empty or with cell)"
+samtools view -@ $cpu -f 2 -F 1024 $rep/outs/possorted_bam.bam  | \
    awk '{for (i=12; i<=NF; ++i) { if ($i ~ "^CB:Z") { print $i};} };' | \
-   sed -s "s/CB:Z://" | sort -S 20 | uniq -c | sed -s "s/  \+//" | \
+   sed -s "s/CB:Z://" | sort -S 20 | uniq -c | sed -s "s/  \+//"      | \
    awk '{ print $2 "\t" $1}' | sort -S 20 > $rep/outs/count_mapped_reads_per_barcode.tsv
 
 echo "Separating empty droplets from droplets with cell"
