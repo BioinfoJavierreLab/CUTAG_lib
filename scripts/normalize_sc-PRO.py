@@ -7,12 +7,14 @@ from argparse     import ArgumentParser
 import numpy as np
 from scipy import sparse
 import pandas as pd
+from sklearn.metrics import v_measure_score
 
 import anndata as ad
 import scanpy as sc
 import muon as mu
 
 from cutag.parsers.cellranger import load_cellranger
+from cutag.utilities.clustering import wanted_leiden
 
 def merge_adjacent_bins(adata):
     prevc, p = adata.var.index[0].split(':')
@@ -84,6 +86,11 @@ def main():
     adt_by_bg = opts.adt_by_bg
     feature_type = opts.feature_type
     outdir = opts.outdir
+    
+    
+    pca1     = False
+    n_pcs    = 30
+    n_leiden = 5
 
     sample = os.path.split(genomic_sample)[-1]
 
@@ -138,11 +145,43 @@ def main():
 
     mu.pp.intersect_obs(mdata)
     
-    # save it
-    print(f" - Save Muon object")    
-    os.system(f"mkdir -p {outdir}")
-    mdata.write_h5mu(os.path.join(outdir, f"{sample}.h5ad"))
 
+    # PCA
+    print(f" - Computing PCAs")
+    md_histones = mdata.mod["histone"]
+    md_membrane = mdata.mod["ADT"]
+    
+    sc.tl.pca(md_histones, svd_solver='arpack')
+    if pca1:
+        md_histones.obsm['X_pca'] = md_histones.obsm['X_pca'][:,1:]
+    
+    sc.tl.pca(md_membrane, svd_solver='arpack')
+    
+    num_cells = len(md_histones.obs_names)
+    n_neighbors = int(np.sqrt(num_cells))
+
+    print(f" - Computing neighbors")
+    sc.pp.neighbors(md_histones, n_pcs=n_pcs, n_neighbors = n_neighbors)
+    sc.pp.neighbors(md_membrane, n_neighbors=n_neighbors, n_pcs=n_pcs)
+
+    md_histones = wanted_leiden(md_histones, nclust=n_leiden)
+
+    print(f" - Computing leiden")
+    wanted_leiden(md_histones, n_leiden)
+    wanted_leiden(md_membrane, n_leiden)
+    
+    vms = v_measure_score(md_membrane.obs['leiden'], md_histones.obs['leiden'])
+    print(f" - V-meassure score: {vms}")
+
+    # save it
+    print(f" - Save Muon object and stats")    
+    os.system(f"mkdir -p {outdir}")
+    mdata.write_h5mu(os.path.join(outdir, f"{sample}_{'bg' if adt_by_bg else 'nobg'}.h5mu"))
+    
+    out = open(os.path.join(outdir, f"{sample}_stats_{'bg' if adt_by_bg else 'nobg'}.tsv"), "w")
+    out.write(f"VMS\t{vms}\n")
+    out.close()
+    
     print(f"\nDone.")
 
 

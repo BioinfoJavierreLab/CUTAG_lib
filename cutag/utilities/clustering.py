@@ -11,11 +11,11 @@ def wanted_leiden(ada, nclust, **kwargs):
     
     :returns: the the input AnnData (TODO: perhap not necessary)
     """
-    for res in [0.4, 0.8, 0.2]:
+    for res in [0.4, 0.8, 0.2, 0.1, 0.9, 0.3, 0.7, 0.5, 0.6]:
         min_res = 0
         max_res = 1
         key_added = kwargs.get("key_added", "leiden")
-        for _ in range(20):
+        for _ in range(30):
             leiden(ada, resolution=res, **kwargs)
             nfound = len(set(ada.obs[key_added]))
             if nfound == nclust:
