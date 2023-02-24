@@ -51,6 +51,22 @@ def get_total_mapped(rep):
     return elts
 
 
+def read_matrix(mpath, size):
+    fh = open(mpath)
+    count = 0
+    for line in fh:
+        if line.startswith('%') or line.startswith('#'):
+            count += len(line)
+            continue
+        break
+    fh.seek(count)
+    data, i, j = zip(*((int(v), int(i) - 1, int(j) - 1) 
+                            for i, j, v in (l.split()
+                                            for l in fh)))
+
+    return sparse.coo_matrix((data, (j, i)), shape=size).tocsc()
+
+
 def load_cellranger(directory, feature_type="peaks"):
     """
     :param directory: cellranger root output directory (containting the 'outs'
@@ -75,18 +91,8 @@ def load_cellranger(directory, feature_type="peaks"):
                open(os.path.join(directory, 'outs',
                                  ddir, 'barcodes.tsv'))]
 
-    values = np.zeros((len(columns), len(rows)))
-
-    fh = open(os.path.join(directory, 'outs',
-                           ddir, 'matrix.mtx'))
-    next(fh)
-    next(fh)
-    next(fh)
-    for line in fh:
-        a, b, v = line.split()
-        values[int(b) - 1, int(a) - 1] = int(v)
-
-    X = sparse.csr_matrix(values)
+    X = read_matrix(os.path.join(directory, 'outs', ddir, 'matrix.mtx'), 
+                    size=(len(columns), len(rows)))
 
     adata = ad.AnnData(X=X, obs=columns, var=rows, dtype=X.dtype)
 
