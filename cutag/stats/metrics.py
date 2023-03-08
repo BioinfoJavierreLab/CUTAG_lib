@@ -53,7 +53,7 @@ def _read_fragments_with_offset(fragments_path, adata, offset=1_500, max_len=100
     return fragments
     
 
-def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000):
+def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000, clustering='leiden'):
     """
     Reads the fragments.tsv file from cellranger into a bioframe. 
     The start and end coordinate corresponds to the center of each 
@@ -70,9 +70,11 @@ def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000):
     
     :returns: a dictionary of RAGI score per gene in input table.
     """
+    print("    - loading fragments")
     fragments = _read_fragments_with_offset(fragments_path, adata, 
                                             offset=offset, max_len=max_len)
     
+    print("    - preprocessing -> gene score")
     # compute overlap with genes TSS
     frag_dist = bf.overlap(fragments, df2=genes, how='inner')
     # compute distance between fragment center and TSS
@@ -91,9 +93,9 @@ def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000):
         lambda x: [math.exp( -e / 5000) for e in x])
     
     # merge with Leiden clusters
-    gene_scores = gene_scores.merge(adata.obs['leiden_wnn'], left_on='tag', right_index=True, 
+    gene_scores = gene_scores.merge(adata.obs[clustering], left_on='tag', right_index=True, 
                                     how='inner')
-    gene_scores = gene_scores.rename(columns={'leiden_wnn': 'cluster'})
+    gene_scores = gene_scores.rename(columns={clustering: 'cluster'})
     
     # sumup distance scores -> 1 gene per cell per cluster has 1 score
     gene_scores['sum_score'] = gene_scores['scores'].apply(lambda x: sum(x))
@@ -105,6 +107,7 @@ def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000):
     # sum scores by gene and cluster (no more cells)
     gene_scores = gene_scores.groupby(['gene', 'cluster'], as_index=False)['sum_score'].sum()
 
+    print("    - Getting GINI of Gene scores -> RAGI")
     # divide by number of cells in cluster
     #  -> gene_score is the average presence of a gene for a given cluster 
     #       (similar to the average income for a given person)
@@ -114,10 +117,16 @@ def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000):
     
     ragis = {}
     n = len(cell_clusters)
-    for gene in genes['name']:
+    
+    def _lorenz(gene):
         tmp = gene_scores[gene_scores['gene'] == gene]['gene_score']
         av = tmp.sum() / n
-        ragis[gene] = sum(abs(xi - xj) for xi, xj in permutations(tmp, 2)) / (2 * n**2 * av)
+        return sum(abs(xi - xj) for xi, xj in permutations(tmp, 2)) / (2 * n**2 * av)
+        
+    ragis = dict(
+        (gene, _lorenz(gene))
+        for gene in genes['name']
+    )
 
     return ragis
 
