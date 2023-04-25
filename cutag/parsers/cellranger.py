@@ -41,6 +41,37 @@ def _transpose_load_ADTs(fpath, adata):
     del(adts.var[0])
     return adts
 
+def _transpose_load_ADTs2(fpath, adata):
+    """
+    :param fpath: path to file with matrix of counts per ADT type and per cell
+    :param adata: AnnData object with the barcodes we need from ADT matrix file
+    
+    :returns: AnnData object
+    """
+    fh = open(fpath)
+    cell_barcodes = dict((v, n) for n, v in enumerate(adata.obs.index))
+    these_barcodes = dict((n, k) for n, k in enumerate(next(fh).split()))
+    rows = [l.split()[0] for l in fh]
+    matrix = np.zeros((len(cell_barcodes), len(rows)))
+
+    fh.seek(0)
+    _ = next(fh)
+    for j, line in enumerate(fh):
+        _, *elts = line.split()
+        for n, v in enumerate(elts):
+            try:
+                i = cell_barcodes[these_barcodes[n]]
+            except KeyError:
+                continue
+            matrix[i, j] = int(v)
+
+    adts = ad.AnnData(X=matrix, obs=cell_barcodes.keys(), var=rows, dtype=matrix.dtype)
+    adts.var_names = rows
+    adts.obs_names = cell_barcodes
+    del(adts.obs[0])
+    del(adts.var[0])
+    return adts
+
 
 def _cutag_load_ADTs(fpath, adata):
     """
@@ -70,7 +101,7 @@ def _cutag_load_ADTs(fpath, adata):
     return adts
 
 
-def load_ADTs(fpath, adata, transpose=False):
+def load_ADTs(fpath, adata, modality, transpose=False):
     """
     :param fpath: path to file with matrix of counts per ADT type and per cell
     :param adata: AnnData object with the barcodes we need from ADT matrix file
@@ -78,7 +109,10 @@ def load_ADTs(fpath, adata, transpose=False):
     :returns: AnnData object
     """
     if transpose:
-        return _transpose_load_ADTs(fpath, adata)
+        if modality == "CITE":
+            return _transpose_load_ADTs2(fpath, adata)            
+        else:
+            return _transpose_load_ADTs(fpath, adata)
     else:
         return _cutag_load_ADTs(fpath, adata)
 
