@@ -153,7 +153,8 @@ def main():
     rm_pca          = opts.rm_pca         if opts.rm_pca         else samples['optimal params']['rm_pca']
 
     n_pcs           = opts.n_pcs          if opts.n_pcs          else samples['optimal params']['n_pcs']
-    bg           = opts.bg          if opts.bg          else "bg"
+    bg              = opts.bg          if opts.bg          else "bg"
+    normalize_total = opts.normalize_total
     
     # long long output directory name
     dname = f"LEIDEN{n_leiden}_{sampleID}_MIN-CELLS{min_cells}"
@@ -318,9 +319,10 @@ def main():
         # Run the regression.
         out = interp.run()
         slope, intercept = out.beta
+        ad_adts.obs["adt_count"] = np.sum(ad_adts.X, axis=1)
         ad_adts.obs["correction"] = intercept + slope * np.log1p(ad_adts.obs["adt_count"])
         # we apply correction on the log +1 of the X matrix, then come back to original values (with exp)
-        ad_adts.X = np.exp(np.log1p(ad_adts.X) / ad_adts.obs["correction"][:,None]) - 1
+        ad_adts.X = np.exp(np.log1p(ad_adts.X) / ad_adts.obs["correction"].to_numpy()[:,None]) - 1
     
         # old shit
         # sc.pp.log1p(ad_adts)                                              # Eixo u a fet el Xavi
@@ -338,8 +340,9 @@ def main():
     normalize_CLR(ad_adts)
 
     # scale data
-    sc.pp.normalize_total(ad_adts, target_sum=1_000_000)
-    sc.pp.normalize_total(adata  , target_sum=1_000_000)
+    if normalize_total == 1:
+        sc.pp.normalize_total(ad_adts, target_sum=1_000_000)
+        sc.pp.normalize_total(adata  , target_sum=1_000_000)
 
     ###########################################################################
     # ANALYSIS
@@ -594,6 +597,7 @@ def main():
     
     mdata.write_h5mu(os.path.join(outdir, f"{sampleID}.h5mu"))
 
+    # compute jaccard index
     M1 = mdata['histone'].obsp['connectivities']
     M2 = mdata['ADT'].obsp['connectivities']
 
@@ -668,6 +672,8 @@ def get_options():
 
     parser.add_argument('--rm_pca', dest='rm_pca', type=int,
                         help='''Supress given PCA component (0 means no removal).''')
+    parser.add_argument('--normalize_total', dest='normalize_total', type=int, default=1,
+                        help='''normalize_total to 1e6 (0 means no normalize).''')
 
     parser.add_argument('--n_neighbors', dest='n_neighbors', type=float, default=1.0,
                         help='''[%(default)s] Number of neighbors for clustering, proportion relative to the
