@@ -25,6 +25,10 @@ from cutag.parsers.cellranger import load_cellranger, load_ADTs
 from cutag.utilities.clustering import wanted_leiden
 from cutag.stats.metrics import ragi_score
 
+# accounts for number of CPUs used in sklearn
+from threadpoolctl import threadpool_limits
+
+
 def jacind(M1, M2, p=2, binarize=False):
     if binarize:
         M1 = (M1 > 0).astype(int)
@@ -323,7 +327,7 @@ def main():
         ad_adts.obs["correction"] = intercept + slope * np.log1p(ad_adts.obs["adt_count"])
         # we apply correction on the log +1 of the X matrix, then come back to original values (with exp)
         ad_adts.X = np.exp(np.log1p(ad_adts.X) / ad_adts.obs["correction"].to_numpy()[:,None]) - 1
-    
+
         # old shit
         # sc.pp.log1p(ad_adts)                                              # Eixo u a fet el Xavi
         # ad_adts.X /= np.log(ad_adts.obs["bg_counts"]).to_numpy()[:,None]  # Eixo u a fet el Xavi
@@ -334,13 +338,13 @@ def main():
         print(f" - no ADTs normalization by droplet")
     else:
         raise NotImplementedError(
-            f"ERROR: regrerssion {regress_count} not implemented")
+            f"ERROR: regression {regress_count} not implemented")
 
     print(f" - Normalize ADTs by CLR")
     normalize_CLR(ad_adts)
 
     # scale data
-    if normalize_total == 1:
+    if normalize_total:
         sc.pp.normalize_total(ad_adts, target_sum=1_000_000)
         sc.pp.normalize_total(adata  , target_sum=1_000_000)
 
@@ -361,9 +365,11 @@ def main():
     print(f" - Computing PCAs")
     md_histones = mdata.mod["histone"]
     md_membrane = mdata.mod["ADT"]
-    
-    sc.tl.pca(md_membrane, svd_solver='arpack')
-    sc.tl.pca(md_histones, svd_solver='arpack')
+
+    with threadpool_limits(limits=1, user_api='blas'):  # limit to single CPU
+        sc.tl.pca(md_membrane, svd_solver='arpack')
+        sc.tl.pca(md_histones, svd_solver='arpack')
+
     if rm_pca:
         md_histones.obsm['X_pca'] = md_histones.obsm['X_pca'][:,1:]
     
@@ -371,10 +377,11 @@ def main():
     n_neighbors = int(np.sqrt(num_cells) * n_neighbors)
 
     print(f" - Computing neighbors")
-    sc.pp.neighbors(md_histones, n_pcs=n_pcs, n_neighbors=n_neighbors)
-    sc.pp.neighbors(md_membrane, n_pcs=n_pcs, n_neighbors=n_neighbors)
+    with threadpool_limits(limits=1, user_api='blas'):
+        sc.pp.neighbors(md_histones, n_pcs=n_pcs, n_neighbors=n_neighbors)
+        sc.pp.neighbors(md_membrane, n_pcs=n_pcs, n_neighbors=n_neighbors)
 
-    print(f" - Leiden clustering histones ({n_leiden} wanted)")
+    print(f" - Leiden clustering genomic data ({n_leiden} wanted)")
     md_histones = wanted_leiden(md_histones, n_leiden)
     print(f" - Leiden clustering ADTs ({n_leiden} wanted)")
     md_membrane = wanted_leiden(md_membrane, n_leiden)
@@ -387,7 +394,8 @@ def main():
     v_measures['leiden'] = vms
 
     print(f" - Plotting")
-    sc.tl.umap(md_histones)
+    with threadpool_limits(limits=1, user_api='blas'):
+        sc.tl.umap(md_histones)
     # plot PCA
     sc.pl.pca_variance_ratio(md_histones, log=True, show=False)
     plt.savefig(os.path.join(outdir, "genomic_pca-weights_plot.png"))
@@ -395,7 +403,7 @@ def main():
     ###########################################################################
     # compute V-measure Score
     adt_names = md_membrane.var_names
-    
+
     out = open(os.path.join(outdir, "V-measures.tsv"), "w")
     out.write(f"leiden\t{v_measures['leiden']}\n")
     # We classify cells according to their abundance for each of its ADTs
@@ -521,7 +529,7 @@ def main():
 
     ###########################################################################
     # WNN
-    if wnn:
+    if wnn:  ## WARNING: cannot control number of CPUs used here
         mu.pp.neighbors(mdata, key_added='wnn', n_neighbors=n_neighbors)
         wanted_leiden(mdata, n_leiden, neighbors_key='wnn', key_added='leiden_wnn')
         mu.tl.umap(mdata, neighbors_key='wnn', random_state=10)
@@ -672,7 +680,7 @@ def get_options():
 
     parser.add_argument('--rm_pca', dest='rm_pca', type=int,
                         help='''Supress given PCA component (0 means no removal).''')
-    parser.add_argument('--normalize_total', dest='normalize_total', type=int, default=1,
+    parser.add_argument('--normalize_total', dest='normalize_total', default=False, action="store_true",
                         help='''normalize_total to 1e6 (0 means no normalize).''')
 
     parser.add_argument('--n_neighbors', dest='n_neighbors', type=float, default=1.0,
