@@ -8,6 +8,7 @@ from yaml import Loader, load
 import numpy as np
 from scipy import sparse
 from scipy import odr
+from scipy.stats import mannwhitneyu
 import pandas as pd
 import bioframe as bf
 from sklearn.metrics import v_measure_score, adjusted_rand_score
@@ -477,9 +478,11 @@ def main():
 
         fun_genes = bf_genes['housekeeping'].copy()
         fun_genes |= bf_genes[f'marker {tissue}']
-
+        # free memory
+        bf_genes = bf_genes[fun_genes]
+        # compute RAGI
+        
         ragis=dict()
-
         for gene in bf_genes[(bf_genes["marker Peripheral blood"] == True) | (bf_genes["housekeeping"] == True)]["name"]:
             try:
                 ragis[gene] = gini(df[gene].to_numpy())
@@ -487,7 +490,7 @@ def main():
                 print("")
 
         bf_genes['ragi'] = bf_genes['name'].map(ragis)
-        bf_genes[fun_genes].to_csv(os.path.join(outdir, "RAGI_scores.tsv"), sep='\t')
+        bf_genes.to_csv(os.path.join(outdir, "RAGI_scores.tsv"), sep='\t')
     else:
         # Computing RAGI for ASAP or CUTandTAG-PRO
         print(" - Computing RAGI")
@@ -523,9 +526,12 @@ def main():
         
         fun_genes = bf_genes['housekeeping'].copy()
         fun_genes |= bf_genes[f'marker {tissue}']
-        ragis = ragi_score(fragments_path, md_membrane, bf_genes[fun_genes], offset=10_000, clustering="leiden")
+        # free memory
+        bf_genes = bf_genes[fun_genes]
+        # compute RAGI
+        ragis = ragi_score(fragments_path, md_membrane, bf_genes, offset=10_000, clustering="leiden")
         bf_genes['ragi'] = bf_genes['name'].map(ragis)
-        bf_genes[fun_genes].to_csv(os.path.join(outdir, "RAGI_scores.tsv"), sep='\t')
+        bf_genes.to_csv(os.path.join(outdir, "RAGI_scores.tsv"), sep='\t')
 
     ###########################################################################
     # WNN
@@ -578,20 +584,13 @@ def main():
 
     # Leiden numbers
     _ = plt.figure(figsize=(6, 5))
-    h = plt.hist(md_histones.obs["leiden"], bins=n_leiden, 
+    cluster_hist = plt.hist(md_histones.obs["leiden"], bins=n_leiden, 
                  range=(-0.5, n_leiden - 0.5), ec="tab:grey", alpha=0.4)
     for y, x in zip(h[0], h[1]):
         plt.text(x + 0.5, y, int(y), ha="center")
     plt.ylabel("Number of cells")
     plt.xlabel("# Leiden cluster")
     plt.savefig(os.path.join(outdir, "Leiden_plot.png"))
-
-    out = open(os.path.join(outdir, "stats.tsv"), "w")
-    line = "\t".join(str(v) for v in h[0])
-    out.write(f"COUNT\t{line}\n")
-    out.write(f"TOTAL\t{sum(h[0])}\n")
-    out.write(f"STDEV\t{np.std(h[0])}\n")
-    out.close()
 
     # save Muon object
     #if seed==None:
@@ -613,10 +612,29 @@ def main():
     stat2 = jacind(M1, M2, binarize=True, p=1)
 
     out = open(os.path.join(outdir, f"{sampleID}_stats.tsv"), "w")
+    # cluster descriptive
+    line = "\t".join(str(v) for v in cluster_hist[0])
+    out.write(f"Number of cells per cluster\t{line}\n")
+    out.write(f"Std dev. of cells per cluster\t{np.std(cluster_hist[0])}\n")
+    out.write(f"Total number of cells\t{sum(cluster_hist[0])}\n")
+    # correlation ADT / histone clusters
     out.write(f"VMS\t{vms}\n")
     out.write(f"ARI\t{ari}\n")
+    # correlation ADT / histone graphs
     out.write(f"JAC1\t{stat1}\n")
     out.write(f"JAC2\t{stat2}\n")
+    # RAGI
+    
+    ragi_marker = [v for v in bf_genes[bf_genes[f'marker {tissue}']]['ragi'] if np.isfinite(v)]
+    ragi_housek = [v for v in bf_genes[bf_genes['housekeeping']]['ragi'] if np.isfinite(v)]
+    r, p = mannwhitneyu(x, y)
+    ragi_marker = np.median(ragi_marker)
+    ragi_housek = np.median(ragi_housek)
+    out.write(f"RAGI housekeeping genes\t{ragi_housek}\n")
+    out.write(f"RAGI marker genes ({tissue})\t{ragi_housek}\n")
+    out.write(f"RAGI ratio\t{ragi_marker / ragi_housek}\n")
+    out.write(f"RAGI ratio significance\t{p}\n")
+    out.write(f"RAGI ratio MannWhit. stat\t{r}\n")
     out.close()
     
     ###########################################################################
