@@ -72,6 +72,25 @@ def _transpose_load_ADTs2(fpath, adata):
     del(adts.var[0])
     return adts
 
+def _transpose_load_ADTs3(fpath, adata):
+    """
+    :param fpath: path to file with matrix of counts per ADT type and per cell
+    :param adata: AnnData object with the barcodes we need from ADT matrix file
+    
+    :returns: AnnData object
+    """
+    df_adts = pd.read_csv(fpath, sep=' ')
+    df_adts=df_adts.T
+
+    adts = ad.AnnData(X=df_adts.to_numpy(), obs=df_adts.index.tolist(), var=df_adts.columns.tolist(), dtype='float64')
+    adts.var_names = df_adts.columns.tolist()
+    adts.obs_names = df_adts.index.tolist()
+    
+    del(adts.obs[0])
+    del(adts.var[0])
+    
+    return adts
+
 
 def _cutag_load_ADTs(fpath, adata):
     """
@@ -110,12 +129,13 @@ def load_ADTs(fpath, adata, modality, transpose=False):
     """
     if transpose:
         if modality == "CITE":
-            return _transpose_load_ADTs2(fpath, adata)            
+            return _transpose_load_ADTs2(fpath, adata)
+        elif modality == "ASAP":
+            return _transpose_load_ADTs3(fpath, adata)
         else:
             return _transpose_load_ADTs(fpath, adata)
     else:
         return _cutag_load_ADTs(fpath, adata)
-
 def read_bed(line):
     c, b, e = line.split()
     return f"{c}:{b}-{e}"

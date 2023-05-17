@@ -11,7 +11,8 @@ from scipy import odr
 from scipy.stats import mannwhitneyu
 import pandas as pd
 import bioframe as bf
-from sklearn.metrics import v_measure_score, adjusted_rand_score
+from sklearn.metrics import v_measure_score, adjusted_rand_score, f1_score, adjusted_mutual_info_score, recall_score, precision_score, homogeneity_score, completeness_score
+import itertools
 
 from matplotlib import pyplot as plt
 
@@ -29,6 +30,62 @@ from cutag.stats.metrics import ragi_score
 # accounts for number of CPUs used in sklearn
 from threadpoolctl import threadpool_limits
 
+def generate_combinations(columns, depth):
+    new_comb = []
+    
+    for r in range(1, depth + 1):
+        for combination in itertools.combinations(columns, r):
+            new_comb.append('+'.join(str(c) for c in combination))
+    
+    return new_comb
+
+def XI(df, depth):
+
+    cross_tab = pd.crosstab(df['ADT:leiden'], df['histone:leiden'])
+    original_cross_tab = cross_tab.copy()
+
+    columns = cross_tab.columns
+    new_comb = generate_combinations(columns, depth)
+
+    for comb in new_comb:
+        if "+" in comb:
+            cross_tab[comb] = cross_tab[comb.split("+")].sum(axis=1)
+
+        else:
+            cross_tab[comb]  = cross_tab[int(comb)] 
+
+    for comb in new_comb:
+        if "+" in comb:
+            cross_tab.loc[comb] = cross_tab.loc[comb.split("+")].sum()
+        else:
+            cross_tab.loc[comb]  = cross_tab.loc[int(comb)] 
+
+    for i in original_cross_tab.columns:
+        i = str(i)
+        del cross_tab[i]
+        cross_tab = cross_tab.drop(i)
+
+    rows_cross_tab = cross_tab.loc[original_cross_tab.columns.tolist()]
+    columns_cross_tab = cross_tab[original_cross_tab.columns.tolist()]
+
+    sum_rows=list()
+    for i in original_cross_tab.columns:
+        sum_row = original_cross_tab.loc[i].sum()
+        max_row = max(rows_cross_tab.loc[i])
+        sum_rows.append(max_row/sum_row)
+
+    F1 = sum(sum_rows)/len(original_cross_tab.columns)
+
+    sum_cols=list()
+    for i in original_cross_tab.columns:
+        sum_col = original_cross_tab[i].sum()
+        max_col = max(columns_cross_tab[i])
+        sum_cols.append(max_col/sum_col)
+
+    F2 = sum(sum_cols)/len(original_cross_tab.columns)
+
+    XI = (F1+F2)/2
+    return XI
 
 def jacind(M1, M2, p=2, binarize=False):
     if binarize:
@@ -134,9 +191,9 @@ def main():
     
     regress_count  = opts.regress_count
     feature_type   = opts.feature_type
-    n_neighbors    = opts.n_neighbors
+    n_neighbors    = opts.n_neighbors    if opts.n_neighbors    else samples['optimal params']['n_neighbors']
 
-    seed           = opts.seed      if opts.seed else None
+    seed           = opts.seed           if opts.seed           else None
 
     min_cells      = opts.min_cells      if opts.min_cells      else samples['optimal params']['min_cells']
     min_genes      = opts.min_genes      if opts.min_genes      else samples['optimal params']['min_genes']
@@ -153,12 +210,11 @@ def main():
         min_n_genes = opts.min_n_genes   if opts.min_n_genes    else samples['optimal params']['min_n_genes']
         max_n_genes = opts.max_n_genes   if opts.max_n_genes    else samples['optimal params']['max_n_genes']    
     
-    n_leiden        = opts.n_leiden       if opts.n_leiden       else samples['optimal params']['n_leiden']
+    n_leiden        = opts.n_leiden      if opts.n_leiden       else samples['optimal params']['n_leiden']
     
-    rm_pca          = opts.rm_pca         if opts.rm_pca         else samples['optimal params']['rm_pca']
+    rm_pca          = opts.rm_pca        if opts.rm_pca         else samples['optimal params']['rm_pca']
 
-    n_pcs           = opts.n_pcs          if opts.n_pcs          else samples['optimal params']['n_pcs']
-    bg              = opts.bg          if opts.bg          else "bg"
+    n_pcs           = opts.n_pcs         if opts.n_pcs          else samples['optimal params']['n_pcs']
     normalize_total = opts.normalize_total
     
     # long long output directory name
@@ -184,26 +240,33 @@ def main():
     else:
         adata = load_cellranger(genomic_sample, feature_type=feature_type, 
                                 dtype=float)
+    adata.obs["total_genomic"] = np.array(adata.X.sum(axis=1)).flatten()
 
     # Filter bins in few cells
     print(f" - Filter genomic features in few cells")
     ###########################################################################
     # Filter Genomic library
+    if samples["modality"] == "ASAP":
+        # we load the adts and then filter to keep only those barcodes because the csv was already filtered
+        adts_file = os.path.join(adt_sample, "ADTs", "ADT_matrix.tsv")
+        ad_adts = load_ADTs(adts_file, adata, modality= samples["modality"], transpose=True)
+        adata = adata[adata.obs_names.isin(ad_adts.obs_names)]
+        adata.obs["n_counts"] = np.array(adata.X.sum(axis=1)).flatten()
+    else:
+        # Cell barcodes with <1000 or >60000 UMIs
+        if min_counts:
+            sc.pp.filter_cells(adata, min_counts=min_counts)
+        if max_counts:
+            sc.pp.filter_cells(adata, max_counts=max_counts)
 
-    # Cell barcodes with <1000 or >60000 UMIs
-    if min_counts:
-        sc.pp.filter_cells(adata, min_counts=min_counts)
-    if max_counts:
-        sc.pp.filter_cells(adata, max_counts=max_counts)
-
-    # # <50 or >700 genes detected
-    if min_genes:
-        sc.pp.filter_cells(adata, min_genes=min_genes)
-    if max_genes:
-        sc.pp.filter_cells(adata, max_genes=max_genes)
-    # removing genes expressed in fewer than 3 cells
-    if min_cells:
-        sc.pp.filter_genes(adata, min_cells=min_cells)
+        # # <50 or >700 genes detected
+        if min_genes:
+            sc.pp.filter_cells(adata, min_genes=min_genes)
+        if max_genes:
+            sc.pp.filter_cells(adata, max_genes=max_genes)
+        # removing genes expressed in fewer than 3 cells
+        if min_cells:
+            sc.pp.filter_genes(adata, min_cells=min_cells)
 
     # RNA specific filters
     if samples["modality"] == "CITE":
@@ -212,22 +275,6 @@ def main():
         adata = adata[adata.obs.pct_counts_mt < max_mito, :]
         adata = adata[adata.obs.n_genes_by_counts > min_n_genes, :]
         adata = adata[adata.obs.n_genes_by_counts < max_n_genes, :]
-
-
-    ###########################################################################
-    ## BOOTSTRAPPING over Genomic features
-    #if seed:
-    #    mat = ad_hist.X.toarray()
-
-    #    np.random.seed(seed)
-
-    #    # Generate a list of 10 random numbers in the range [0, 250]
-    #    substitutes = np.random.choice(range(len(ad_hist)), int(len(ad_hist)), replace=True)
-
-    #    for i in range(len(substitutes)):
-    #        mat[:,i] = mat[:,substitutes[i]]
-
-    #    ad_hist.X = sparse.csr_matrix(mat)
 
     ###########################################################################
     ## GENOMIC PROCESSING
@@ -269,6 +316,7 @@ def main():
         
     if min_counts_adt:
         sc.pp.filter_cells(ad_adts, min_counts=min_counts_adt)
+        sc.pp.filter_genes(ad_adts, min_counts=min_counts_adt)  # we want to make sure there is at least few counts for a given ADT
         
     if max_counts_adt:
         sc.pp.filter_cells(ad_adts, max_counts=max_counts_adt)
@@ -300,17 +348,20 @@ def main():
     
     ###########################################################################
     # Normalize each cell ADT count by the genomic-library background
-    if regress_count == "bg":
-        if samples["modality"] == "CITE":
-            ad_adts.obs["bg_counts"] = ad_adts.obs["total_counts"]
-        else:
-            if bg == "bg":
+    if regress_count != "no":
+        if regress_count == "bg":
+            if samples["modality"] == "CITE":
+                ad_adts.obs["bg_counts"] = ad_adts.obs["total_counts"]
+            else:
                 process_line = lambda barcode, bg_count: (barcode, int(bg_count)) 
                 bgpath = os.path.join(genomic_sample, "outs", "mapped_read_per_barcode.txt")
                 bg_dict = dict(process_line(*l.split()) for l in open(bgpath, "r"))
                 ad_adts.obs["bg_counts"] = ad_adts.obs.index.map(bg_dict)
-            elif bg == "total_genomic":
-                ad_adts.obs["bg_counts"] = adata.obs["n_counts"]
+        elif regress_count == "total":
+            ad_adts.obs["bg_counts"] = ad_adts.obs["total_genomic"]
+        else:
+            raise NotImplementedError(
+                f"ERROR: regression {regress_count} not implemented")
         print(f" - Normalize ADTs by genomic background")
         # Load the data
         x = np.log1p(np.sum(ad_adts.X, axis=1))
@@ -335,11 +386,8 @@ def main():
         # ad_adts.X *= np.nanmedian(np.log(ad_adts.obs["bg_counts"]))       # Eixo u a fet el Xavi
         # ad_adts.X = np.exp(ad_adts.X)                                     # Eixo u a fet el Xavi
         # ad_adts.X = ad_adts.X - 1                                         # Eixo u a fet el Xavi
-    elif regress_count == "no":
-        print(f" - no ADTs normalization by droplet")
     else:
-        raise NotImplementedError(
-            f"ERROR: regression {regress_count} not implemented")
+        print(f" - no ADTs normalization by droplet")
 
     print(f" - Normalize ADTs by CLR")
     normalize_CLR(ad_adts)
@@ -348,6 +396,8 @@ def main():
     if normalize_total:
         sc.pp.normalize_total(ad_adts, target_sum=1_000_000)
         sc.pp.normalize_total(adata  , target_sum=1_000_000)
+        #sc.pp.scale(ad_adts)
+        #sc.pp.scale(adata)
 
     ###########################################################################
     # ANALYSIS
@@ -389,8 +439,10 @@ def main():
     
     vms = v_measure_score(md_membrane.obs['leiden'], md_histones.obs['leiden'])
     ari = adjusted_rand_score(md_membrane.obs['leiden'], md_histones.obs['leiden'])
+    f_1 = f1_score(md_histones.obs['leiden'], md_membrane.obs['leiden'], average="weighted")
     print(f" - V-meassure score: {vms}")
     print(f" - Adjusted Randome score: {ari}")
+    print(f" - F1 score: {f_1}")
     v_measures = {}
     v_measures['leiden'] = vms
 
@@ -583,13 +635,22 @@ def main():
     #plt.savefig(os.path.join(outdir, "UMAP_on_V-measures.png"))
 
     # Leiden numbers
-    _ = plt.figure(figsize=(6, 5))
+    _ = plt.figure(figsize=(6, 10))
+    plt.subplot(2, 1, 1)
     cluster_hist = plt.hist(md_histones.obs["leiden"], bins=n_leiden, 
                  range=(-0.5, n_leiden - 0.5), ec="tab:grey", alpha=0.4)
-    for y, x in zip(h[0], h[1]):
+    for y, x in zip(cluster_hist[0], cluster_hist[1]):
         plt.text(x + 0.5, y, int(y), ha="center")
     plt.ylabel("Number of cells")
-    plt.xlabel("# Leiden cluster")
+    plt.xlabel("# Leiden cluster in Genomic lib.")
+    plt.subplot(2, 1, 2)
+    cluster_memb = plt.hist(md_membrane.obs["leiden"], bins=n_leiden, 
+                 range=(-0.5, n_leiden - 0.5), ec="tab:grey", alpha=0.4)
+    for y, x in zip(cluster_memb[0], cluster_memb[1]):
+        plt.text(x + 0.5, y, int(y), ha="center")
+    plt.ylabel("Number of cells")
+    plt.xlabel("# Leiden cluster in ADT lib.")
+    plt.tight_layout()
     plt.savefig(os.path.join(outdir, "Leiden_plot.png"))
 
     # save Muon object
@@ -601,7 +662,8 @@ def main():
     #    if seed<6:
     #        mdata.write_h5mu(os.path.join(outdir, f"{sampleID}.h5mu"))
 
-    
+    # save Muon object
+    print(f" - Save Muon object and stats")    
     mdata.write_h5mu(os.path.join(outdir, f"{sampleID}.h5mu"))
 
     # compute jaccard index
@@ -611,30 +673,54 @@ def main():
     stat1 = jacind(M1, M2)
     stat2 = jacind(M1, M2, binarize=True, p=1)
 
+    ami = adjusted_mutual_info_score(md_histones.obs['leiden'], md_membrane.obs['leiden'])
+    precision = precision_score(md_histones.obs['leiden'], md_membrane.obs['leiden'], average="weighted")
+    recall = recall_score(md_histones.obs['leiden'], md_membrane.obs['leiden'], average="weighted")
+    homogeneity = homogeneity_score(md_histones.obs['leiden'], md_membrane.obs['leiden'])
+    completeness = completeness_score(md_histones.obs['leiden'], md_membrane.obs['leiden'])
+
     out = open(os.path.join(outdir, f"{sampleID}_stats.tsv"), "w")
     # cluster descriptive
     line = "\t".join(str(v) for v in cluster_hist[0])
-    out.write(f"Number of cells per cluster\t{line}\n")
-    out.write(f"Std dev. of cells per cluster\t{np.std(cluster_hist[0])}\n")
-    out.write(f"Total number of cells\t{sum(cluster_hist[0])}\n")
+    out.write(f"Number of cells per Genomic cluster\t{line}\n")
+    out.write(f"Std dev. of cells per Genomic cluster\t{np.std(cluster_hist[0])}\n")
+    line = "\t".join(str(v) for v in cluster_hist[0])
+    out.write(f"Number of cells per ADT cluster\t{line}\n")
+    out.write(f"Std dev. of cells per ADT cluster\t{np.std(cluster_memb[0])}\n")
+    out.write(f"Total number of cells\t{sum(cluster_memb[0])}\n")
     # correlation ADT / histone clusters
     out.write(f"VMS\t{vms}\n")
     out.write(f"ARI\t{ari}\n")
+    out.write(f"F1\t{f_1}\n")
     # correlation ADT / histone graphs
     out.write(f"JAC1\t{stat1}\n")
     out.write(f"JAC2\t{stat2}\n")
+
     # RAGI
-    
     ragi_marker = [v for v in bf_genes[bf_genes[f'marker {tissue}']]['ragi'] if np.isfinite(v)]
     ragi_housek = [v for v in bf_genes[bf_genes['housekeeping']]['ragi'] if np.isfinite(v)]
     r, p = mannwhitneyu(x, y)
     ragi_marker = np.median(ragi_marker)
     ragi_housek = np.median(ragi_housek)
+
+    #XI
+    xi_2 = XI(mdata.obs[["histone:leiden", "ADT:leiden"]].astype(int), 2)
+    xi_3 = XI(mdata.obs[["histone:leiden", "ADT:leiden"]].astype(int), 3)
+    xi_4 = XI(mdata.obs[["histone:leiden", "ADT:leiden"]].astype(int), 4)
+
     out.write(f"RAGI housekeeping genes\t{ragi_housek}\n")
-    out.write(f"RAGI marker genes ({tissue})\t{ragi_housek}\n")
+    out.write(f"RAGI marker genes ({tissue})\t{ragi_marker}\n")
     out.write(f"RAGI ratio\t{ragi_marker / ragi_housek}\n")
     out.write(f"RAGI ratio significance\t{p}\n")
     out.write(f"RAGI ratio MannWhit. stat\t{r}\n")
+    out.write(f"XI depth 2\t{xi_2}\n")
+    out.write(f"XI depth 3\t{xi_3}\n")
+    out.write(f"XI depth 4\t{xi_4}\n")
+    out.write(f"AMI\t{ami}\n")
+    out.write(f"Precision score\t{precision}\n")
+    out.write(f"Recall score\t{recall}\n")
+    out.write(f"Homogeneity score\t{homogeneity}\n")
+    out.write(f"Completeness score\t{completeness}\n")
     out.close()
     
     ###########################################################################
@@ -660,7 +746,7 @@ def get_options():
                         default=False, help='''ADT ID (overrides what is in the YAML sample file)''')
 
     parser.add_argument('-f', dest='feature_type', metavar='STR', 
-                        default='peaks', choices=["5000_notmerged", "peaks", "TFs"],
+                        default='peaks', choices=["5000_notmerged", "peaks", "TFs", "merged_as_satija"],
                         help='''[%(default)s] Feature type. Can be one of [%(choices)s]''')
 
     parser.add_argument('-d', dest='data_dir', metavar='PATH', 
@@ -697,7 +783,7 @@ def get_options():
                         help='''[%(default)s] Regress out total count''')
 
     parser.add_argument('--rm_pca', dest='rm_pca', type=int,
-                        help='''Supress given PCA component (0 means no removal).''')
+                        help='''Supress given PCA component (0 means no removal). If not indicated it takes from yaml''')
     parser.add_argument('--normalize_total', dest='normalize_total', default=False, action="store_true",
                         help='''normalize_total to 1e6 (0 means no normalize).''')
 
@@ -709,8 +795,6 @@ def get_options():
 
     parser.add_argument('--n_leiden', dest='n_leiden', type=int, default=7,
                         help='''[%(default)s] Leiden resolution parameter''')
-    parser.add_argument('--bg', dest='bg', default="bg", 
-                        choices=["bg", "total_genomic"],  help='''[%(default)s] Which genomic feature use to correct (bg or total) ''')
 
     opts = parser.parse_args()
     return opts
