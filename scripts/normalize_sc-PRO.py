@@ -282,12 +282,12 @@ def main():
         # Create a Scrublet object, fit the data to it and filter out predicted doublets
         print(f" - log(ygc /sc + 1) normalization on genomic library")
         scrub = scr.Scrublet(adata.X)
-        doublet_scores, predicted_doublets = scrub.scrub_doublets()
+        _, predicted_doublets = scrub.scrub_doublets()
         adata = adata[~predicted_doublets]
         L = adata.obs["total_counts"].sum()/len(adata)
         adata.obs["s"] = adata.obs["total_counts"]/L
         mat = adata.X.toarray()
-        mat_div = mat/adata.obs["s"][:, np.newaxis]
+        mat_div = mat / adata.obs["s"][:, np.newaxis]
         adata.X = mat_div # do not sum 1 because log1p already sums it
         sc.pp.log1p(adata)
     else:

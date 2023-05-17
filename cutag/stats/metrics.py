@@ -66,7 +66,7 @@ def ragi_score(fragments_path, adata, genes, offset=1_500, max_len=1000, cluster
     :param genes: pandas of bioframe dataframe with "chrom", "start", 
        "end" and "name" fields
     :param 20_000 offset: maximum distance to associate a TSS to a fragment
-    :param 1_000 max_len: maximm length of a fragment
+    :param 1_000 max_len: maximum length of a fragment
     
     :returns: a dictionary of RAGI score per gene in input table.
     """
