@@ -4,6 +4,10 @@
 
 # USAGE
 
+## Install
+
+`python setup.py install`
+
 ## preprocessing
 
  - generate a cleaned BAM file from cellranger BAM output:
