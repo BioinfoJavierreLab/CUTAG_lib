@@ -136,29 +136,29 @@ def main():
     feature_type   = opts.feature_type
     n_neighbors    = opts.n_neighbors
 
-    seed           = opts.seed      if opts.seed else None
+    seed           = opts.seed      if opts.seed is not None else None
 
-    min_cells      = opts.min_cells      if opts.min_cells      else samples['optimal params']['min_cells']
-    min_genes      = opts.min_genes      if opts.min_genes      else samples['optimal params']['min_genes']
-    max_genes      = opts.max_genes      if opts.max_genes      else samples['optimal params']['max_genes']
-    min_counts     = opts.min_counts     if opts.min_counts     else samples['optimal params']['min_counts']
-    max_counts     = opts.max_counts     if opts.max_counts     else samples['optimal params']['max_counts']
+    min_cells      = opts.min_cells      if opts.min_cells is not None     else samples['optimal params']['min_cells']
+    min_genes      = opts.min_genes      if opts.min_genes is not None     else samples['optimal params']['min_genes']
+    max_genes      = opts.max_genes      if opts.max_genes is not None     else samples['optimal params']['max_genes']
+    min_counts     = opts.min_counts     if opts.min_counts is not None    else samples['optimal params']['min_counts']
+    max_counts     = opts.max_counts     if opts.max_counts is not None    else samples['optimal params']['max_counts']
 
-    min_genes_adt  = opts.min_genes_adt  if opts.min_genes_adt  else samples['optimal params']['min_genes_adt']
-    min_counts_adt = opts.min_counts_adt if opts.min_counts_adt else samples['optimal params']['min_counts_adt']
-    max_counts_adt = opts.max_counts_adt if opts.max_counts_adt else samples['optimal params']['max_counts_adt']
+    min_genes_adt  = opts.min_genes_adt  if opts.min_genes_adt is not None else samples['optimal params']['min_genes_adt']
+    min_counts_adt = opts.min_counts_adt if opts.min_counts_adt is not None else samples['optimal params']['min_counts_adt']
+    max_counts_adt = opts.max_counts_adt if opts.max_counts_adt is not None else samples['optimal params']['max_counts_adt']
     
     if samples["modality"] == "CITE":
-        max_mito    = opts.max_mito      if opts.max_mito       else samples['optimal params']['max_mito']
-        min_n_genes = opts.min_n_genes   if opts.min_n_genes    else samples['optimal params']['min_n_genes']
-        max_n_genes = opts.max_n_genes   if opts.max_n_genes    else samples['optimal params']['max_n_genes']    
+        max_mito    = opts.max_mito      if opts.max_mito is not None      else samples['optimal params']['max_mito']
+        min_n_genes = opts.min_n_genes   if opts.min_n_genes is not None   else samples['optimal params']['min_n_genes']
+        max_n_genes = opts.max_n_genes   if opts.max_n_genes is not None   else samples['optimal params']['max_n_genes']    
     
-    n_leiden        = opts.n_leiden       if opts.n_leiden       else samples['optimal params']['n_leiden']
+    n_leiden        = opts.n_leiden       if opts.n_leiden is not None      else samples['optimal params']['n_leiden']
     
-    rm_pca          = opts.rm_pca         if opts.rm_pca         else samples['optimal params']['rm_pca']
+    rm_pca          = opts.rm_pca         if opts.rm_pca is not None        else samples['optimal params']['rm_pca']
 
-    n_pcs           = opts.n_pcs          if opts.n_pcs          else samples['optimal params']['n_pcs']
-    bg              = opts.bg          if opts.bg          else "bg"
+    n_pcs           = opts.n_pcs          if opts.n_pcs is not None         else samples['optimal params']['n_pcs']
+    bg              = opts.bg          if opts.bg is not None         else "bg"
     normalize_total = opts.normalize_total
     
     # long long output directory name
@@ -322,9 +322,10 @@ def main():
         # Set up ODR with the model and data.
         interp = odr.ODR(data, linear_model, beta0=[1., 1.])
         # Run the regression.
+        # TODO: check if correlation is significant: if not output WARNING
         out = interp.run()
         slope, intercept = out.beta
-        ad_adts.obs["adt_count"] = np.sum(ad_adts.X, axis=1)
+        ad_adts.obs["adt_count" ] = np.sum(ad_adts.X, axis=1)
         ad_adts.obs["correction"] = intercept + slope * np.log1p(ad_adts.obs["adt_count"])
         # we apply correction on the log +1 of the X matrix, then come back to original values (with exp)
         ad_adts.X = np.exp(np.log1p(ad_adts.X) / ad_adts.obs["correction"].to_numpy()[:,None]) - 1
@@ -631,7 +632,7 @@ def main():
     ragi_marker = np.median(ragi_marker)
     ragi_housek = np.median(ragi_housek)
     out.write(f"RAGI housekeeping genes\t{ragi_housek}\n")
-    out.write(f"RAGI marker genes ({tissue})\t{ragi_housek}\n")
+    out.write(f"RAGI marker genes ({tissue})\t{ragi_marker}\n")
     out.write(f"RAGI ratio\t{ragi_marker / ragi_housek}\n")
     out.write(f"RAGI ratio significance\t{p}\n")
     out.write(f"RAGI ratio MannWhit. stat\t{r}\n")

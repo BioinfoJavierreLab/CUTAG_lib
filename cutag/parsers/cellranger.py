@@ -73,7 +73,7 @@ def _transpose_load_ADTs2(fpath, adata):
     return adts
 
 
-def _cutag_load_ADTs(fpath, adata):
+def _cutag_load_ADTs(fpath, adata, trim_tag=False):
     """
     :param fpath: path to file with matrix of counts per ADT type and per cell
     :param adata: AnnData object with the barcodes we need from ADT matrix file
@@ -85,8 +85,14 @@ def _cutag_load_ADTs(fpath, adata):
     rows = next(fh).split()
     matrix = np.zeros((len(cell_barcodes), len(rows)))
 
+    if trim_tag:
+        trim = lambda x: x.split('-')[0]
+    else:
+        trim = lambda x: x
+
     for line in fh:
         bc, *elts = line.split()
+        bc = trim(bc)
         try:
             pos = cell_barcodes[bc]
         except KeyError:
@@ -101,10 +107,12 @@ def _cutag_load_ADTs(fpath, adata):
     return adts
 
 
-def load_ADTs(fpath, adata, modality, transpose=False):
+def load_ADTs(fpath, adata, modality="ATAC", transpose=False, trim_tag=False):
     """
     :param fpath: path to file with matrix of counts per ADT type and per cell
     :param adata: AnnData object with the barcodes we need from ADT matrix file
+    :param "ASAP" modality: either ASAP (this is for CUT&TAG also) of CITE
+    :param False trim_tag: remove trailing "-1" from cell-tag in ADT file
     
     :returns: AnnData object
     """
@@ -114,7 +122,7 @@ def load_ADTs(fpath, adata, modality, transpose=False):
         else:
             return _transpose_load_ADTs(fpath, adata)
     else:
-        return _cutag_load_ADTs(fpath, adata)
+        return _cutag_load_ADTs(fpath, adata, trim_tag=trim_tag)
 
 def read_bed(line):
     c, b, e = line.split()
